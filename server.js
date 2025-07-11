@@ -299,33 +299,65 @@ app.get("/api/health", (req, res) => {
 
 // ============ AUTH ROUTES ============
 
-// Register
+// Enhanced Registration endpoint with detailed logging
 app.post("/api/auth/register", async (req, res) => {
   try {
+    console.log("Registration attempt - Request body:", req.body);
+    console.log("Registration attempt - Content-Type:", req.headers['content-type']);
+    
     const { name, email, password } = req.body;
 
-    // Validation
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: "All fields are required" });
+    // Enhanced validation with detailed error messages
+    if (!name) {
+      console.log("Registration failed: Missing name");
+      return res.status(400).json({ error: "Name is required" });
+    }
+    
+    if (!email) {
+      console.log("Registration failed: Missing email");
+      return res.status(400).json({ error: "Email is required" });
+    }
+    
+    if (!password) {
+      console.log("Registration failed: Missing password");
+      return res.status(400).json({ error: "Password is required" });
     }
 
+    if (password.length < 6) {
+      console.log("Registration failed: Password too short");
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      console.log("Registration failed: Invalid email format");
+      return res.status(400).json({ error: "Please enter a valid email address" });
+    }
+
+    console.log("Checking if user exists with email:", email);
+
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
+      console.log("Registration failed: Email already registered");
       return res.status(400).json({ error: "Email already registered" });
     }
+
+    console.log("Creating new user...");
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user
     const user = new User({
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
     });
 
     await user.save();
+    console.log("User created successfully:", user._id);
 
     // Generate token
     const token = jwt.sign(
@@ -333,6 +365,8 @@ app.post("/api/auth/register", async (req, res) => {
       process.env.JWT_SECRET || "your-secret-key",
       { expiresIn: "7d" }
     );
+
+    console.log("Registration successful for:", email);
 
     res.status(201).json({
       message: "User registered successfully",
@@ -344,8 +378,18 @@ app.post("/api/auth/register", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Registration error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Registration error - Full details:", error);
+    
+    // Handle specific MongoDB errors
+    if (error.code === 11000) {
+      console.log("Registration failed: Duplicate key error");
+      return res.status(400).json({ error: "Email already registered" });
+    }
+    
+    res.status(500).json({ 
+      error: "Internal server error",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
